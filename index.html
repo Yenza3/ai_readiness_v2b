@@ -762,7 +762,7 @@
   // Free key (no credit card): https://aistudio.google.com
   // Restrict key to "Generative Language API" in Google Cloud Console.
   // ============================================================
-  const API_KEY = 'AIzaSyBkLEOeS8FWylXDBVLNxQUXHB5taIkr_2g';
+  const API_KEY = 'AIzaSyAWTzJZTuCfsgPDoMjS8qgFz9gbN2YfgVQ';
 
   // ── FRAMEWORK ───────────────────────────────────────────────────
   const FRAMEWORK = {
@@ -1145,10 +1145,70 @@
   });
 
   // ── API ───────────────────────────────────────────────────────────
+  // Stripped-down framework for the prompt — omits indicators to save ~60% of tokens.
+  // The full FRAMEWORK is still used client-side for results rendering.
+  function buildPromptFramework() {
+    const slim = {};
+    Object.entries(FRAMEWORK).forEach(([key, cat]) => {
+      slim[key] = {
+        name: cat.name,
+        levels: cat.levels.map(lvl => lvl === null ? null : {
+          classification: lvl.classification,
+          description: lvl.description
+        })
+      };
+    });
+    return slim;
+  }
+
+  async function callGemini(promptString, retries = 2) {
+    const resp = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${API_KEY}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: promptString }] }],
+          generationConfig: { temperature: 0 }
+        })
+      }
+    );
+
+    if (resp.status === 429 && retries > 0) {
+      // Try to honour the retry-after hint from the error body
+      let waitMs = 20000;
+      try {
+        const errJson = await resp.clone().json();
+        const retryDetail = errJson?.error?.details?.find(d => d.retryDelay);
+        if (retryDetail?.retryDelay) {
+          const secs = parseInt(retryDetail.retryDelay, 10);
+          if (!isNaN(secs)) waitMs = (secs + 2) * 1000;
+        }
+      } catch (_) { /* ignore */ }
+      await new Promise(r => setTimeout(r, waitMs));
+      return callGemini(promptString, retries - 1);
+    }
+
+    if (!resp.ok) {
+      const errBody = await resp.text();
+      // Surface quota errors with a clear message
+      if (resp.status === 429) {
+        throw new Error(
+          'QUOTA_EXCEEDED: Your API key has hit its quota limit. ' +
+          'If limit shows as 0, your Google Cloud project has billing enabled which disables free-tier access. ' +
+          'Create a new key in a project with no billing enabled at aistudio.google.com'
+        );
+      }
+      throw new Error(`API ${resp.status}: ${errBody}`);
+    }
+
+    return resp.json();
+  }
+
   async function scoreResponses(ans) {
     const partA = `You are an expert AI readiness evaluator. Your task is to score the respondent from 1 to 5 in each of four categories based on their survey answers and the framework provided below. Consider all answers holistically — some questions deliberately map to multiple categories. Do not default to middle scores; use the full 1–5 range where the evidence warrants it.`;
 
-    const partB = JSON.stringify(FRAMEWORK, null, 2);
+    const partB = JSON.stringify(buildPromptFramework(), null, 2);
 
     let partC = '';
     if (userName || userRole) {
@@ -1186,24 +1246,7 @@ Rules: N must be an integer 1-5. nextSteps must have exactly 5 items, one per ca
     const promptString = `${partA}\n\n${partB}\n\n${partC}\n\n${partD}`;
 
     try {
-      const resp = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${API_KEY}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: promptString }] }],
-            generationConfig: { temperature: 0 }
-          })
-        }
-      );
-
-      if (!resp.ok) {
-        const errBody = await resp.text();
-        throw new Error(`API ${resp.status}: ${errBody}`);
-      }
-
-      const data = await resp.json();
+      const data = await callGemini(promptString);
       const raw   = data.candidates[0].content.parts[0].text;
       // Extract the JSON object robustly — handles markdown fences or bare JSON
       const jsonMatch = raw.match(/\{[\s\S]*\}/);
