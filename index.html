@@ -607,6 +607,108 @@
       .action-row .btn { min-width: unset; }
     }
 
+    /* ─── API KEY INPUT ─── */
+    .api-key-group {
+      margin-bottom: 20px;
+      background: rgba(0,180,216,0.06);
+      border: 1.5px solid rgba(0,180,216,0.35);
+      border-radius: 12px;
+      padding: 16px 18px;
+    }
+
+    .api-key-group > label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: var(--primary);
+      margin-bottom: 10px;
+    }
+
+    .api-key-required {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      background: var(--danger);
+      color: #fff;
+      padding: 2px 7px;
+      border-radius: 10px;
+      margin-left: auto;
+    }
+
+    .api-key-input-wrap {
+      display: flex;
+      gap: 8px;
+      align-items: stretch;
+    }
+
+    .api-key-input-wrap input {
+      flex: 1;
+      padding: 11px 14px;
+      border: 2px solid var(--border);
+      border-radius: 10px;
+      font-size: 14px;
+      font-family: monospace;
+      color: var(--text-primary);
+      background: var(--card);
+      transition: border-color 0.2s;
+      min-width: 0;
+    }
+
+    .api-key-input-wrap input:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+
+    .btn-show-key {
+      padding: 0 16px;
+      background: var(--border);
+      border: 2px solid var(--border);
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.2s;
+      font-family: inherit;
+    }
+
+    .btn-show-key:hover {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: #fff;
+    }
+
+    .api-key-hint {
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin-top: 10px;
+      line-height: 1.5;
+    }
+
+    .api-key-hint a {
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 600;
+    }
+
+    .api-key-hint a:hover { text-decoration: underline; }
+
+    .api-key-error {
+      font-size: 12px;
+      color: var(--danger);
+      font-weight: 600;
+      margin-top: 8px;
+      display: none;
+    }
+
+    .api-key-error.show { display: block; }
+
     /* Spacing helper */
     .mb24 { margin-bottom: 24px; }
 
@@ -684,6 +786,20 @@
       <h1>AI Readiness Assessment</h1>
       <p class="intro-subtitle">Discover your AI readiness profile across four key dimensions: Sentiment, Awareness, Experience, and Adaptability.</p>
       <p class="intro-body">Answer 9 open-ended questions honestly. There are no right or wrong answers — the assessment is designed to give you a personalised, actionable picture of where you stand today and what to focus on next. Takes approximately 5–10 minutes.</p>
+
+      <div class="api-key-group">
+        <label for="intro-apikey">
+          🔑 Gemini API Key
+          <span class="api-key-required">Required</span>
+        </label>
+        <div class="api-key-input-wrap">
+          <input type="password" id="intro-apikey" placeholder="Paste your key here  (AIzaSy...)" autocomplete="off" spellcheck="false" />
+          <button type="button" id="btn-toggle-key" class="btn-show-key">Show</button>
+        </div>
+        <p class="api-key-hint">Get a free key at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">aistudio.google.com/apikey</a> — your key is used only to call Google's API and is never stored beyond this session.</p>
+        <div class="api-key-error" id="apikey-error">Please enter your Gemini API key to continue.</div>
+      </div>
+
       <div class="input-group">
         <label for="intro-name">First Name</label>
         <input type="text" id="intro-name" placeholder="Your first name — optional" autocomplete="given-name" />
@@ -758,11 +874,14 @@
 
 <script>
   // ============================================================
-  // SITE OWNER SETUP: Replace with your Google AI Studio key.
-  // Free key (no credit card): https://aistudio.google.com
-  // Restrict key to "Generative Language API" in Google Cloud Console.
+  // API key is entered by the user at runtime on the intro screen.
+  // It is stored only in sessionStorage (cleared when browser tab closes).
+  // It is NEVER hardcoded here — doing so would expose it on public GitHub.
+  // Get a free key at: https://aistudio.google.com/apikey
   // ============================================================
-  const API_KEY = 'YOUR_GOOGLE_AI_STUDIO_KEY_HERE';
+  function getApiKey() {
+    return sessionStorage.getItem('gemini_api_key') || '';
+  }
 
   // ── FRAMEWORK ───────────────────────────────────────────────────
   const FRAMEWORK = {
@@ -1136,6 +1255,16 @@
   });
 
   document.getElementById('btn-start').addEventListener('click', () => {
+    const keyInput = document.getElementById('intro-apikey').value.trim();
+    const keyError = document.getElementById('apikey-error');
+    if (!keyInput) {
+      keyError.classList.add('show');
+      document.getElementById('intro-apikey').focus();
+      return;
+    }
+    keyError.classList.remove('show');
+    // Save key to sessionStorage — cleared automatically when tab closes
+    sessionStorage.setItem('gemini_api_key', keyInput);
     userName   = document.getElementById('intro-name').value.trim();
     userRole   = document.getElementById('intro-role').value.trim();
     currentIdx = 0;
@@ -1143,6 +1272,25 @@
     showSection('section-survey');
     renderQuestion(0);
   });
+
+  // Show/hide API key toggle
+  document.getElementById('btn-toggle-key').addEventListener('click', () => {
+    const input = document.getElementById('intro-apikey');
+    const btn   = document.getElementById('btn-toggle-key');
+    if (input.type === 'password') {
+      input.type = 'text';
+      btn.textContent = 'Hide';
+    } else {
+      input.type = 'password';
+      btn.textContent = 'Show';
+    }
+  });
+
+  // Pre-fill key field if already saved this session (e.g. after Retake)
+  (function prefillKey() {
+    const saved = sessionStorage.getItem('gemini_api_key');
+    if (saved) document.getElementById('intro-apikey').value = saved;
+  })();
 
   // ── API ───────────────────────────────────────────────────────────
   // Stripped-down framework for the prompt — omits indicators to save ~60% of tokens.
@@ -1163,7 +1311,7 @@
 
   async function callGemini(promptString, retries = 2) {
     const resp = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${API_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${getApiKey()}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1427,8 +1575,11 @@ Rules: N must be an integer 1-5. nextSteps must have exactly 5 items, one per ca
     userRole   = '';
     currentIdx = 0;
     answers    = new Array(9).fill('');
-    document.getElementById('intro-name').value = '';
-    document.getElementById('intro-role').value = '';
+    document.getElementById('intro-name').value  = '';
+    document.getElementById('intro-role').value  = '';
+    // Keep key pre-filled from sessionStorage so user doesn't need to re-enter it
+    const saved = sessionStorage.getItem('gemini_api_key');
+    if (saved) document.getElementById('intro-apikey').value = saved;
     document.getElementById('section-results').innerHTML = '';
     showSection('section-intro');
   }
