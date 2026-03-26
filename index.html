@@ -748,6 +748,7 @@
       </svg>
       <h2>Something went wrong</h2>
       <p>We couldn't analyse your responses. Your answers have been saved — click Try Again to resubmit.</p>
+      <div id="error-detail" style="font-size:12px;color:var(--danger);background:rgba(239,71,111,0.07);border-radius:8px;padding:10px 14px;margin-bottom:20px;text-align:left;word-break:break-word;display:block;min-height:0;"></div>
       <button class="btn btn-primary" id="btn-try-again">Try Again</button>
       <p class="error-small">If the problem persists, please check your internet connection.</p>
     </div>
@@ -1204,8 +1205,10 @@ Rules: N must be an integer 1-5. nextSteps must have exactly 5 items, one per ca
 
       const data = await resp.json();
       const raw   = data.candidates[0].content.parts[0].text;
-      const clean = raw.replace(/```json[\s\S]*?```/g, m => m.slice(7, -3)).replace(/```/g, '').trim();
-      const scores = JSON.parse(clean);
+      // Extract the JSON object robustly — handles markdown fences or bare JSON
+      const jsonMatch = raw.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) throw new Error(`No JSON found in response: ${raw.slice(0, 200)}`);
+      const scores = JSON.parse(jsonMatch[0]);
 
       ['sentiment', 'awareness', 'experience', 'adaptability'].forEach(key => {
         const v = scores[key];
@@ -1220,6 +1223,8 @@ Rules: N must be an integer 1-5. nextSteps must have exactly 5 items, one per ca
 
     } catch (err) {
       console.error('Assessment error:', err);
+      const detail = document.getElementById('error-detail');
+      if (detail) detail.textContent = err.message || String(err);
       showSection('section-error');
     }
   }
